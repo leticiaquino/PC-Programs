@@ -79,8 +79,10 @@ def evaluate_tiff(img_filename, min_height=None, max_height=None):
     tiff_im = utils.tiff_image(img_filename)
     if tiff_im is not None:
         errors = []
+        dpi = None if tiff_im.info is None else tiff_im.info.get('dpi', [_('unknown')])[0]
+
         info = []
-        info.append('{dpi} dpi'.format(dpi=tiff_im.info.get('dpi', [_('unknown')])[0]))
+        info.append('{dpi} dpi'.format(dpi=dpi))
         info.append(_('height: {height} pixels').format(height=tiff_im.size[1]))
         info.append(_('width: {width} pixels').format(width=tiff_im.size[0]))
 
@@ -93,8 +95,8 @@ def evaluate_tiff(img_filename, min_height=None, max_height=None):
                 status = validation_status.STATUS_WARNING
         if status is not None:
             errors.append(_('Be sure that {img} has valid height. Recommended: min={min} and max={max}. The images must be proportional among themselves.').format(img=os.path.basename(img_filename), min=min_height, max=max_height))
-        if tiff_im.info.get('dpi') is not None:
-            if tiff_im.info.get('dpi') < MIN_IMG_DPI:
+        if dpi is not None:
+            if dpi < MIN_IMG_DPI:
                 errors.append(_('Expected >= {value} dpi').format(value=MIN_IMG_DPI))
                 status = validation_status.STATUS_ERROR
         if len(errors) > 0:
@@ -359,6 +361,7 @@ class ArticleContentValidation(object):
 
         items.append(self.sections)
         items.append(self.paragraphs)
+        items.append(self.disp_formulas)
         items.append(self.validate_xref_reftype)
         items.append(self.missing_xref_list)
         items.append(self.innerbody_elements_permissions)
@@ -368,6 +371,25 @@ class ArticleContentValidation(object):
 
         r = self.normalize_validations(items)
         return (r, performance)
+
+    @property
+    def disp_formulas(self):
+        results = []
+        children = ['graphic', '{http://www.w3.org/1998/Math/MathML}math']
+        for item in self.article.disp_formula_elements:
+            found = False
+            for name in children:
+                if item.find(name) is not None:
+                    print(xml_utils.node_text(item))
+                    if name == 'graphic':
+                        if item.attrib.get('{http://www.w3.org/1999/xlink}href') is not None:
+                            found = True
+                    elif name == '{http://www.w3.org/1998/Math/MathML}math':
+                        if len(xml_utils.remove_tags(xml_utils.node_text(item))) > 0:
+                            found = True
+            if not found:
+                results.append(('disp-formula', validation_status.STATUS_FATAL_ERROR, _('{element} is not complete, it requires {children} with valid structure.').format(children=_(' or ').join(children), element='disp-formula'), xml_utils.node_xml(item)))
+        return results
 
     @property
     def dtd_version(self):
@@ -571,6 +593,17 @@ class ArticleContentValidation(object):
                 author_xref_items.append(xref)
             for result in validate_contrib_names(item, aff_ids):
                 r.append(result)
+            for contrib_id_type, contrib_id in item.contrib_id.items():
+                if contrib_id_type in attributes.CONTRIB_ID_URLS.keys():
+                    if attributes.CONTRIB_ID_URLS.get(contrib_id_type) in contrib_id or contrib_id.startswith('http'):
+                        label = 'contrib-id[@contrib-id-type="' + contrib_id_type + '"]'
+                        r.append((label, validation_status.STATUS_ERROR,
+                            _('{value} is an invalid value for {label}. ').format(value=contrib_id, label=label) +
+                            _('Use only the ID')))
+                else:
+                    r.append(('contrib-id/@contrib-id-type', validation_status.STATUS_ERROR,
+                            _('{value} is an invalid value for {label}. ').format(value=contrib_id_type, label='contrib-id/@contrib-id-type') + 
+                            _('Expected values: {expected_values}').format(values=', '.join(attributes.CONTRIB_ID_URLS.keys()))))
         for affid in aff_ids:
             if not affid in author_xref_items:
                 r.append(('aff/@id', validation_status.STATUS_FATAL_ERROR, _('Missing') + ' xref[@ref-type="aff"]/@rid="' + affid + '".'))
@@ -624,7 +657,7 @@ class ArticleContentValidation(object):
                     found = False
                     for issn in [self.article.print_issn, self.article.e_issn]:
                         if issn is not None:
-                            if issn in self.article.doi:
+                            if issn.upper() in self.article.doi.upper():
                                 found = True
                     if not found:
                         r.append(('doi', validation_status.STATUS_ERROR, _('Be sure that {item} belongs to this journal.').format(item='DOI=' + self.article.doi)))
@@ -1025,12 +1058,9 @@ class ArticleContentValidation(object):
                     r.append(('license/@xml:lang', validation_status.STATUS_ERROR, _('Identify @xml:lang of license')))
             else:
                 r.append(('license/@xml:lang', validation_status.STATUS_INFO, lang))
-            if license.get('href') is None:
-                r.append(('license/@xlink:href', validation_status.STATUS_FATAL_ERROR, _('Invalid value for ') + 'license/@href. ' + license.get('href')))
-            elif not '://creativecommons.org/licenses/' in license.get('href'):
-                r.append(('license/@xlink:href', validation_status.STATUS_FATAL_ERROR, _('Invalid value for ') + 'license/@href. ' + license.get('href')))
-            elif not ws_requester.wsr.is_valid_url(license.get('href')):
-                r.append(('license/@xlink:href', validation_status.STATUS_FATAL_ERROR, _('Invalid value for ') + 'license/@href. ' + license.get('href')))
+            result = attributes.validate_license_href(license.get('href'))
+            if result is not None:
+                r.append(result)
             r.append(expected_values('license/@license-type', license.get('type'), ['open-access'], 'FATAL '))
             r.append(required('license/license-p', license.get('text'), validation_status.STATUS_FATAL_ERROR, False))
         return [item for item in r if r is not None]

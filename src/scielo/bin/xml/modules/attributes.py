@@ -5,12 +5,14 @@ from datetime import datetime
 from __init__ import _
 import validation_status
 import article_utils
+import ws_requester
 
 
 SPS_MIN_DATE = datetime(2012, 06, 01)
 SPS_MIN_DATEISO = 20120601
 
 SPS_versions_expiration_dates = {
+                'sps-1.5': '20171001',
                 'sps-1.4': '20170401',
                 'sps-1.3': '20160901',
                 'sps-1.2': '20160301',
@@ -37,7 +39,7 @@ REFTYPE_AND_TAG_ITEMS = {'aff': ['aff'], 'app': ['app'], 'author-notes': ['fn'],
 DOCTOPIC = {
                 'research-article': 'oa',
                 'editorial': 'ed',
-                'abstract': 'ab',
+                'abstract': 'zz',
                 'announcement': 'zz',
                 'article-commentary': 'co',
                 'case-report': 'cr',
@@ -49,25 +51,25 @@ DOCTOPIC = {
                 'books-received': 'zz',
                 'brief-report': 'rn',
                 'calendar': 'zz',
-                'clinical-trial': 'ct',
+                'clinical-trial': 'oa',
                 'collection': 'zz',
                 'correction': 'er',
-                'discussion': 'em',
-                'dissertation': 'em',
-                'editorial-material': 'em',
+                'discussion': 'ed',
+                'dissertation': 'ed',
+                'editorial-material': 'ed',
                 'in-brief': 'pr',
-                'introduction': 'em',
+                'introduction': 'ed',
                 'meeting-report': 'zz',
                 'news': 'zz',
                 'obituary': 'zz',
                 'oration': 'zz',
-                'partial-retraction': 're',
-                'product-review': 'rc',
-                'reply': 'zz',
+                'partial-retraction': 'partial-retraction',
+                'product-review': 'zz',
+                'reply': 'reply',
                 'reprint': 'zz',
                 'retraction': 're',
                 'translation': 'zz',
-                'technical-report': 'tr',
+                'technical-report': 'oa',
                 'other': 'zz',
 }
 
@@ -76,18 +78,17 @@ DOCTOPIC_IN_USE = [
     'book-review', 
     'brief-report', 
     'case-report', 
-    'clinical-trial', 
     'correction', 
     'editorial', 
-    'editorial-material', 
     'in-brief', 
     'letter', 
     'other', 
     'rapid-communication', 
     'research-article', 
+    'partial-retraction', 
     'retraction', 
+    'reply', 
     'review-article', 
-    'technical-report', 
     ]
 
 AUTHORS_REQUIRED_FOR_DOCTOPIC = [
@@ -106,15 +107,12 @@ AUTHORS_REQUIRED_FOR_DOCTOPIC = [
 ABSTRACT_REQUIRED_FOR_DOCTOPIC = [
     'brief-report', 
     'case-report', 
-    'clinical-trial', 
     'research-article', 
     'review-article', 
-    'technical-report', 
     ]
 
 ABSTRACT_UNEXPECTED_FOR_DOCTOPIC = [
     'editorial', 
-    'editorial-material', 
     'in-brief', 
     'letter', 
     'other', 
@@ -123,11 +121,9 @@ ABSTRACT_UNEXPECTED_FOR_DOCTOPIC = [
 REFS_REQUIRED_FOR_DOCTOPIC = [
     'brief-report', 
     'case-report', 
-    'clinical-trial', 
     'rapid-communication', 
     'research-article', 
     'review-article', 
-    'technical-report', 
     ]
 
 TOC_SECTIONS = { 
@@ -263,10 +259,150 @@ COUNTRY_CODES = [
  'VN', 'VU', 'WF', 'WS', 'YE', 'YT', 'ZA', 'ZM', 'ZW',
  ]
 
-
 PERMISSION_ELEMENTS = ['license', 'copyright-holder', 'copyright-year', 'copyright-statement']
 
 related_articles_type = ['corrected-article', 'article-commentary', 'press-release', 'retracted-article']
+
+CONTRIB_ID_URLS = {
+    'lattes': 'http://lattes.cnpq.br/',
+    'orcid': 'http://orcid.org/',
+    'researchid': 'http://www.researcherid.com/rid/',
+    'scopus': 'https://www.scopus.com/authid/detail.uri?authorId=',  
+}
+
+LICENSES = [
+    'http://creativecommons.org/licenses/by/4.0/',
+    'http://creativecommons.org/licenses/by/3.0/',
+    'http://creativecommons.org/licenses/by-nc/4.0/',
+    'http://creativecommons.org/licenses/by-nc/3.0/',
+    'https://creativecommons.org/licenses/by-nc-nd/3.0/',
+    'https://creativecommons.org/licenses/by-nc-nd/4.0/',
+    'https://creativecommons.org/licenses/by/3.0/igo/',
+    'https://creativecommons.org/licenses/by-nc/3.0/igo/',
+    'https://creativecommons.org/licenses/by-nc-nd/3.0/igo/',
+]
+
+SPS_HELP_ELEMENTS = [
+    'abbrev-journal-title',
+    'abstract',
+    'ack',
+    'addr-line',
+    'aff',
+    'app',
+    'article-categories',
+    'article-id',
+    'article-meta',
+    'article-title',
+    'article',
+    'attrib',
+    'author-notes',
+    'award-group',
+    'award-id',
+    'back',
+    'body',
+    'boxed-text',
+    'caption',
+    'chapter-title',
+    'collab',
+    'comment',
+    'conf-date',
+    'conf-loc',
+    'conf-name',
+    'contrib-group',
+    'contrib-id',
+    'contrib',
+    'copyright-holder',
+    'copyright-statement',
+    'copyright-year',
+    'corresp',
+    'country',
+    'counts',
+    'date-in-citation',
+    'date',
+    'day',
+    'def-list',
+    'disp-formula',
+    'disp-quote',
+    'edition',
+    'element-citation',
+    'elocation-id',
+    'email',
+    'etal',
+    'ext-link',
+    'fig',
+    'fn-group',
+    'fn',
+    'fpage',
+    'front-stub',
+    'front',
+    'funding-group',
+    'funding-source',
+    'funding-statement',
+    'given-names',
+    'glossary',
+    'history',
+    'inline-formula',
+    'inline-graphic',
+    'inline-supplementary-material',
+    'institution',
+    'isbn',
+    'issn',
+    'issue',
+    'journal-id',
+    'journal-meta',
+    'journal-title-group',
+    'journal-title',
+    'kwd-group',
+    'kwd',
+    'label',
+    'license',
+    'list',
+    'lpage',
+    'media',
+    'mixed-citation',
+    'month',
+    'name',
+    'named-content',
+    'on-behalf-of',
+    'p',
+    'page-range',
+    'patent',
+    'permissions',
+    'person-group',
+    'prefix',
+    'product',
+    'pub-date',
+    'pub-id',
+    'publisher-loc',
+    'publisher-name',
+    'publisher',
+    'ref-list',
+    'ref',
+    'related-article',
+    'response',
+    'role',
+    'season',
+    'sec',
+    'sig-block',
+    'size',
+    'source',
+    'sub-article',
+    'subj-group',
+    'suffix',
+    'supplementary-material',
+    'surname',
+    'table-wrap-foot',
+    'table-wrap',
+    'table',
+    'title-group',
+    'trans-abstract',
+    'trans-title-group',
+    'trans-title',
+    'verse-group',
+    'volume',
+    'xref',
+    'year',
+]
 
 
 def normalize_doctopic(_doctopic):
@@ -499,3 +635,19 @@ def validate_iso_country_code(iso_country_code):
             r.append(('aff/country/@country', validation_status.STATUS_FATAL_ERROR, 
                 iso_country_code + ': ' + _('Invalid value')))
     return r
+
+
+def validate_license_href(license_href):
+    result = None
+    if license_href is None:
+        result = ('license/@xlink:href', validation_status.STATUS_FATAL_ERROR, _('Required {label}').format(label='license/@href. '))
+    elif license_href in LICENSES:
+        result = ('license/@xlink:href', validation_status.STATUS_VALID, license_href)
+    else:
+        result = ('license/@xlink:href', validation_status.STATUS_ERROR, _('{value} is an invalid value for {label}. ').format(value=license_href, label='license/@href'))
+        print('LICENSE NOT FOUND')
+        print('|' + license_href + '|')
+        print('\n'.join(LICENSES))
+        #if not ws_requester.wsr.is_valid_url(license_href):
+        #    result = ('license/@xlink:href', validation_status.STATUS_FATAL_ERROR, _('{value} is an invalid value for {label}. ').format(value=license_href, label='license/@href'))
+    return result
